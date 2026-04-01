@@ -1,36 +1,44 @@
+#!/usr/bin/env python3
 # CSEC721 Homework/Lab 2: Homomorphic Encryption
 # Cayden Wright, Spring 2026
-import numpy as np
-from Pyfhel import Pyfhel
+import tenseal as ts
 import csv
 
 NUM_RECORDS = 10
 
 def getPrediction(enc_values):
-    # Scaled integer coefficients (multiplied by 10000)
-    # f(·) = 0.5581×age + 0.0048×trestbps + 0.0044×chol - 0.0036×thalach + 0.1290×oldpeak - 28.9796
-    result = (5581 * enc_values[0] + 
-              48 * enc_values[3] + 
-              44 * enc_values[4] - 
-              36 * enc_values[7] + 
-              1290 * enc_values[9])
+    # This runs on the server - it performs these values without decrypting them
+    # 0.5581×age + 0.0048×trestbps + 0.0044×chol - 0.0036×thalach + 0.1290×oldpeak - 28.9796
+    result = (0.5581 * enc_values[0] + 
+              0.0048 * enc_values[3] + 
+              0.0044 * enc_values[4] - 
+              0.0036 * enc_values[7] + 
+              0.1290 * enc_values[9] - 
+              28.9796)
     return result
 
 
 def main():
     with open ("dataset/heart.csv", "r", encoding="utf-8-sig") as file:
         reader = csv.reader(file)
-        next(reader)  # Skip header
-        i=0
+        next(reader)  # Skip header row
+        i = 0
         for record in reader:
+            # cap records at 10
             if i >= NUM_RECORDS:
                 break
-            HE = Pyfhel()
-            HE.contextGen(scheme='bgv', n=2**14, t_bits=20)
-            HE.keyGen()
-            enc_values = [HE.encrypt(int(float(val))) for val in record]
+            # each person generates their own keys
+            context = ts.context(ts.SCHEME_TYPE.CKKS, 
+                         poly_modulus_degree=8192, 
+                         coeff_mod_bit_sizes=[60, 40, 40, 60])
+            context.generate_galois_keys()
+            context.global_scale = 2**40
+            # Encrypt
+            enc_values = [ts.ckks_vector(context, [float(val)]) for val in record]
+            # this "sends the values to the server" - server does not know true values
             prediction = getPrediction(enc_values)
-            dec_prediction = HE.decrypt(prediction)
+            # Decrypt
+            dec_prediction = prediction.decrypt()[0]
             print(f"Record {i}: Prediction = {dec_prediction}")
             i += 1
 
